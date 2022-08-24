@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useAsyncStorage } from '@react-native-async-storage/async-storage'
 import { StatusBar } from 'expo-status-bar'
-import { Button, StyleSheet, Text, View, TouchableOpacity } from 'react-native'
+import { Button, StyleSheet, Text, View } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import ShowStoredValue from './components/ShowStoredValue'
 
 export default function App() {
   const [count, setCount] = useState(0)
 
-  const [value, setValue] = useState('value')
   const { getItem, setItem, removeItem } = useAsyncStorage('@storage_key')
 
   useEffect(() => {
