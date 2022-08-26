@@ -1,62 +1,78 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
+import { StyleSheet, Text, View, Button } from 'react-native'
+import * as BackgroundFetch from 'expo-background-fetch'
+import * as TaskManager from 'expo-task-manager'
 import { useAsyncStorage } from '@react-native-async-storage/async-storage'
-import { StatusBar } from 'expo-status-bar'
-import { Button, FlatList, StyleSheet, Text, View } from 'react-native'
-import AsyncStorage from '@react-native-async-storage/async-storage'
-import axios from 'axios'
-// import { checkAPI } from './Api'
-import BackgroundFetch from 'react-native-background-fetch'
+
+const BACKGROUND_FETCH_TASK = 'background-fetch'
+
+// 1. Define the task by providing a name and the function that should be executed
+// Note: This needs to be called in the global scope (e.g outside of your React components)
+TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+  const now = Date.now()
+
+  console.log(BACKGROUND_FETCH_TASK, 'running')
+  console.log(`Got background fetch call at date: ${new Date(now).toISOString()}`)
+
+  fetch(`https://jsonplaceholder.typicode.com/todos/1`)
+    .then((response) => response.json())
+    .then((json) => {
+      console.log(json)
+    })
+
+  // Be sure to return the successful result type!
+  return BackgroundFetch.BackgroundFetchResult.NewData
+})
+
+// 2. Register the task at some point in your app by providing the same name, and some configuration options for how the background fetch should behave
+// Note: This does NOT need to be in the global scope and CAN be used in your React components!
+// async function registerBackgroundFetchAsync() {
+//   console.log('register')
+//   return BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+//     minimumInterval: 60 * 15, // 15 minutes
+//     stopOnTerminate: false, // android only,
+//     startOnBoot: true, // android only
+//   })
+// }
+
+const registerBackgroundFetchAsync = async () => {
+  console.log('registerBackgroundFetchAsync()')
+
+  await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+    minimumInterval: 1, // 1 minutes
+    // minimumInterval: 60 * 15, // 15 minutes
+    stopOnTerminate: false, // android only,
+    startOnBoot: true, // android only
+  })
+
+  await BackgroundFetch.setMinimumIntervalAsync(600)
+  console.log('registerTaskAsync')
+}
+// 3. (Optional) Unregister tasks by specifying the task name
+// This will cancel any future background fetch calls that match the given name
+// Note: This does NOT need to be in the global scope and CAN be used in your React components!
+async function unregisterBackgroundFetchAsync() {
+  console.log('unregister')
+  return BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK)
+}
+
+//
+//
+//
 
 export default function App() {
   const [count, setCount] = useState(0)
-
   const { getItem, setItem, removeItem } = useAsyncStorage('@storage_key')
 
-  useEffect(() => {
-    initServices()
+  const [isRegistered, setIsRegistered] = React.useState(false)
+  const [status, setStatus] = React.useState(null)
+
+  React.useEffect(() => {
+    checkStatusAsync()
+    readItemFromStorage()
+    registerBackgroundFetchAsync()
   }, [])
 
-  const initServices = async () => {
-    await readItemFromStorage()
-    await initBackgroundFetch() // Initialize BackgroundFetch
-  }
-
-  // Start the background worker
-  const initBackgroundFetch = async () => {
-    console.log('initBackgroundFetch')
-    const status = await BackgroundFetch.configure(
-      {
-        minimumFetchInterval: 15, // 15 minutes
-        stopOnTerminate: false, // Set false to continue background-fetch events after user terminates the app.
-        // enableHeadless: true, // Set true to enable React Native's Headless JS mechanism, for handling fetch events after app termination
-        startOnBoot: true, // Set true to initiate background-fetch events when the device is rebooted.
-        // ADDITIONAL CONFIG HERE
-      },
-      handleTask,
-      onTimeout
-    )
-
-    console.log('[ RNBF STATUS ]', status)
-  }
-
-  // handleTask is called periodically when RNBF triggers an event
-  const handleTask = async (taskId) => {
-    console.log('store value: ', count)
-    console.log('[ RNBF TASK ID: ]', taskId)
-
-    // DO BACKGROUND WORK HERE
-
-    // This MUST be called in order to signal to the OS that your task is complete
-    BackgroundFetch.finish(taskId)
-  }
-
-  const onTimeout = async () => {
-    // The timeout function is called when the OS signals that the task has reached its maximum execution time.
-
-    // ADD CLEANUP WORK HERE (IF NEEDED)
-
-    BackgroundFetch.finish(taskId)
-  }
   const readItemFromStorage = async () => {
     const item = await getItem()
     // setValue(item)
@@ -65,30 +81,55 @@ export default function App() {
 
   const writeItemToStorage = async (newValue) => {
     await setItem(newValue)
-    // await checkAPI.postData(newValue)
     // setValue(newValue)
     setCount(newValue)
   }
 
-  const sendRequest = async (value) => {
-    const content = axios.post('http://localhost:7261/example', { data: value })
+  const checkStatusAsync = async () => {
+    const status = await BackgroundFetch.getStatusAsync()
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK)
+    setStatus(status)
+    setIsRegistered(isRegistered)
+  }
 
-    // const response = await fetch('https://localhost:7261/example', {
-    //   method: 'POST',
-    //   headers: {
-    //     Accept: 'application/json',
-    //     'Content-Type': 'application/json',
-    //   },
-    //   body: value,
-    // })
-    // const content = await response.json()
+  // const onDisableTask = async () => {
+  //   const isRegisterdFetch = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK)
+  //   if (isRegisterdFetch) {
+  //     await BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK)
 
-    console.log(content)
+  //     console.log('unregister')
+  //   }
+  // }
+
+  const toggleFetchTask = async () => {
+    if (isRegistered) {
+      await unregisterBackgroundFetchAsync()
+    } else {
+      await registerBackgroundFetchAsync()
+    }
+
+    checkStatusAsync()
   }
 
   return (
     <View style={styles.container}>
       <View>
+        <Text>
+          Background fetch status:{' '}
+          <Text style={{ fontWeight: 'bold' }}>{status && BackgroundFetch.BackgroundFetchStatus[status]}</Text>
+        </Text>
+        <Text style={{ marginTop: 20 }}>
+          Background fetch task name:{' '}
+          <Text style={{ fontWeight: 'bold' }}>{isRegistered ? BACKGROUND_FETCH_TASK : 'Not registered yet!'}</Text>
+        </Text>
+      </View>
+      <View style={{ marginTop: 20 }}>
+        <Button title={'toggle'} onPress={toggleFetchTask} />
+      </View>
+      {/* 
+      
+      */}
+      <View style={{ marginTop: 40 }}>
         <Button
           onPress={() => {
             setCount(parseInt(count) + 1)
@@ -105,18 +146,14 @@ export default function App() {
           }}
           title='Reset'
         />
-        <Text> </Text>
+        <Text></Text>
         <Button
           onPress={() => {
             writeItemToStorage(count.toString())
-            // sendRequest(count)
           }}
           title='Save'
         />
       </View>
-      {/* <Button onPress={scheduleTask} title='Do background work' /> */}
-      {/* <Text style={{ marginTop: 40, marginBottom: 15 }}>Current value: {count}</Text> */}
-      <StatusBar style='auto' />
     </View>
   )
 }
